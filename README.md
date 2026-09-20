@@ -4,18 +4,21 @@ Production-oriented, multi-tenant publishing engine and AI newsroom for the Raeb
 
 ## Current implementation
 
-This foundation pass establishes:
+The engineering baseline now includes:
 
 - npm workspaces for `apps/api`, `apps/admin`, `apps/worker` and shared packages;
 - strict TypeScript configuration and pinned Node/npm baseline;
 - explicit editorial lifecycle/state-machine invariants;
-- fail-closed runtime configuration;
-- tenant-scoped service identity boundary;
-- idempotency primitives and publisher atomic-write contract;
+- fail-closed runtime configuration and tenant-scoped service identity boundaries;
+- hashed/revocable service-credential definitions with per-tenant permissions;
+- authenticated `POST /publish` routing into the Publisher boundary;
+- authenticated, defensively filtered `GET /articles` and `GET /articles/:slug` public-read services;
+- schema-validated, idempotent `POST /api/newsroom/signals` ingestion that cannot publish;
+- idempotency primitives, durable idempotency/outbox schema and publisher atomic-write contract;
 - health/readiness/version API behavior;
-- durable-job type contracts that refuse to run without a queue adapter;
-- first PostgreSQL core editorial migration with immutable versions/audit events;
-- regression/security/invariant tests and CI/security automation.
+- PostgreSQL editorial/platform-control migrations with immutable versions/audit events;
+- OpenAPI 3.1 contract validation, threat model and data-model documentation;
+- regression/security/invariant tests plus CI, dependency audit and CodeQL automation.
 
 ## Trust boundaries
 
@@ -24,7 +27,8 @@ This foundation pass establishes:
 3. **Cloudinary** is the authoritative media DAM once integrated.
 4. **AI services** may propose research, drafts and media; they do not publish.
 5. **Publisher** is the only component permitted to transition eligible content to public state.
-6. Consumer sites receive published-only credentials/data.
+6. Consumer sites use tenant-scoped credentials with `article:read` only.
+7. Missing provider adapters or credentials fail closed rather than falling back to permissive behavior.
 
 ## Local verification
 
@@ -35,8 +39,12 @@ npm ci
 npm run check
 ```
 
-GitHub CI downloads the exact TypeScript `5.8.3` compiler for the type-check step. No application runtime dependency is currently required.
+GitHub CI downloads the exact TypeScript `5.8.3` compiler for the type-check step.
+
+## Delivery-state truth
+
+HTTP contracts, service-auth controls and migrations in source are not the same as deployed production infrastructure. Real Neon execution, durable provider adapters, issued production credentials, Cloudinary/Resend integration and production deployment are tracked separately and are not claimed complete until externally verified.
 
 ## Safety
 
-`.env.example` contains names/placeholders only. Never commit real credentials, contact datasets, private source snapshots or production configuration. See `SECURITY.md` and `docs/architecture.md`.
+`.env.example` contains names/placeholders only. Never commit real credentials, contact datasets, private source snapshots or production configuration. See `SECURITY.md`, `docs/threat-model.md` and `docs/architecture.md`.

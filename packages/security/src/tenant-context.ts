@@ -21,6 +21,13 @@ export class AuthenticationError extends Error {
   }
 }
 
+export class AuthorizationError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = "AuthorizationError";
+  }
+}
+
 const safeId = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 
 function requireSafeIdentifier(value: string | undefined, label: string): string {
@@ -55,6 +62,6 @@ export async function resolveTrustedTenantContext(
 
 export function requirePermission(context: TenantContext, permission: string): void {
   if (!context.permissions.includes(permission)) {
-    throw new AuthenticationError(`missing required permission: ${permission}`);
+    throw new AuthorizationError(`missing required permission: ${permission}`);
   }
 }

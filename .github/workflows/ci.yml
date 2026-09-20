@@ -21,6 +21,7 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run migrations:validate
+      - run: npm run api:contract:validate
       - run: npm run secrets:scan
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high
