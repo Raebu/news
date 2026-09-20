@@ -1,0 +1,59 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Raeburn Publishing Engine API", "version": "0.2.0" },
+  "paths": {
+    "/healthz": { "get": { "responses": { "200": { "description": "Liveness" } } } },
+    "/readyz": { "get": { "responses": { "200": { "description": "Ready" }, "503": { "description": "Dependency unavailable" } } } },
+    "/version": { "get": { "responses": { "200": { "description": "Runtime version" } } } },
+    "/articles": {
+      "get": {
+        "security": [{ "serviceKey": [] }],
+        "parameters": [
+          { "in": "header", "name": "x-raeburn-tenant-id", "required": true, "schema": { "type": "string" } },
+          { "in": "header", "name": "x-raeburn-service", "required": true, "schema": { "type": "string" } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 50 } },
+          { "in": "query", "name": "cursor", "schema": { "type": "string", "maxLength": 256 } }
+        ],
+        "responses": { "200": { "description": "Published-only tenant article feed" }, "401": { "description": "Unauthenticated" }, "403": { "description": "Forbidden" } }
+      }
+    },
+    "/articles/{slug}": {
+      "get": {
+        "security": [{ "serviceKey": [] }],
+        "parameters": [
+          { "in": "path", "name": "slug", "required": true, "schema": { "type": "string" } },
+          { "in": "header", "name": "x-raeburn-tenant-id", "required": true, "schema": { "type": "string" } },
+          { "in": "header", "name": "x-raeburn-service", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Published article" }, "404": { "description": "Not found or not public" } }
+      }
+    },
+    "/publish": {
+      "post": {
+        "security": [{ "serviceKey": [] }],
+        "parameters": [
+          { "in": "header", "name": "idempotency-key", "required": true, "schema": { "type": "string" } },
+          { "in": "header", "name": "x-raeburn-tenant-id", "required": true, "schema": { "type": "string" } },
+          { "in": "header", "name": "x-raeburn-service", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "201": { "description": "Published" }, "200": { "description": "Idempotent replay" }, "409": { "description": "Conflict" } }
+      }
+    },
+    "/api/newsroom/signals": {
+      "post": {
+        "security": [{ "serviceKey": [] }],
+        "parameters": [
+          { "in": "header", "name": "idempotency-key", "required": true, "schema": { "type": "string" } },
+          { "in": "header", "name": "x-raeburn-tenant-id", "required": true, "schema": { "type": "string" } },
+          { "in": "header", "name": "x-raeburn-service", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "202": { "description": "Signal accepted, never directly published" }, "200": { "description": "Idempotent replay" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceKey": { "type": "apiKey", "in": "header", "name": "x-raeburn-service-key" }
+    }
+  }
+}

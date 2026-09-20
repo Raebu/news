@@ -14,7 +14,14 @@ declare module "node:test" {
 }
 
 declare module "node:http" {
-  export interface IncomingMessage { method?: string; url?: string; }
+  export interface IncomingMessage {
+    method?: string;
+    url?: string;
+    headers: Readonly<Record<string, string | string[] | undefined>>;
+    on(event: "data", listener: (chunk: string | Uint8Array) => void): this;
+    on(event: "end", listener: () => void): this;
+    on(event: "error", listener: (error: Error) => void): this;
+  }
   export interface ServerResponse {
     statusCode: number;
     setHeader(name: string, value: string): void;

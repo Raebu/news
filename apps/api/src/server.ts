@@ -1,9 +1,6 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { readRuntimeConfig } from "../../../packages/config/src/env.ts";
-
-export interface ReadinessProbe {
-  check(): Promise<{ readonly ready: boolean; readonly reason?: string }>;
-}
+import { routeApiRequest, type ReadinessProbe } from "./api-router.ts";
 
 export interface ApiResponse {
   readonly status: number;
@@ -16,33 +13,65 @@ export async function routeRequest(
   readiness: ReadinessProbe,
   version: string
 ): Promise<ApiResponse> {
-  if (method === "GET" && path === "/healthz") return { status: 200, body: { ok: true } };
-  if (method === "GET" && path === "/version") return { status: 200, body: { version } };
-  if (method === "GET" && path === "/readyz") {
-    const state = await readiness.check();
-    return state.ready
-      ? { status: 200, body: { ready: true } }
-      : { status: 503, body: { ready: false, reason: state.reason ?? "dependency unavailable" } };
+  const result = await routeApiRequest({ method, path, headers: {} }, { readiness, version });
+  return { status: result.status, body: result.body };
+}
+
+function normalizeHeaders(headers: IncomingMessage["headers"]): Record<string, string | undefined> {
+  const result: Record<string, string | undefined> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    result[name.toLowerCase()] = Array.isArray(value) ? value.join(",") : value;
   }
-  return { status: 404, body: { error: "not_found" } };
+  return result;
+}
+
+async function readRequestBody(request: IncomingMessage, maximumBytes = 65_536): Promise<string | undefined> {
+  if (request.method !== "POST" && request.method !== "PUT" && request.method !== "PATCH") return undefined;
+  return await new Promise<string>((resolve, reject) => {
+    let body = "";
+    let bytes = 0;
+    request.on("data", (chunk) => {
+      const text = typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
+      bytes += new TextEncoder().encode(text).byteLength;
+      if (bytes > maximumBytes) {
+        reject(new Error("request body exceeds 64 KiB."));
+        return;
+      }
+      body += text;
+    });
+    request.on("end", () => resolve(body));
+    request.on("error", reject);
+  });
 }
 
 export function startServer(): void {
   const config = readRuntimeConfig(process.env);
   const readiness: ReadinessProbe = {
     async check() {
-      // DB/provider checks are injected in deployment-specific composition. Until then readiness fails closed.
       return { ready: false, reason: "database readiness probe not configured" };
     }
   };
-  const version = "0.1.0";
+  const version = "0.2.0";
   const server = createServer(async (request, response) => {
-    const path = request.url?.split("?", 1)[0] ?? "/";
-    const result = await routeRequest(request.method ?? "GET", path, readiness, version);
-    response.statusCode = result.status;
-    response.setHeader("content-type", "application/json; charset=utf-8");
-    response.setHeader("cache-control", "no-store");
-    response.end(JSON.stringify(result.body));
+    try {
+      const body = await readRequestBody(request);
+      const result = await routeApiRequest({
+        method: request.method ?? "GET",
+        path: request.url ?? "/",
+        headers: normalizeHeaders(request.headers),
+        ...(body === undefined ? {} : { body })
+      }, { readiness, version });
+
+      response.statusCode = result.status;
+      for (const [name, value] of Object.entries(result.headers)) response.setHeader(name, value);
+      response.end(JSON.stringify(result.body));
+    } catch {
+      response.statusCode = 413;
+      response.setHeader("content-type", "application/json; charset=utf-8");
+      response.setHeader("cache-control", "no-store");
+      response.setHeader("x-content-type-options", "nosniff");
+      response.end(JSON.stringify({ error: { code: "payload_too_large", message: "request body exceeds limit." } }));
+    }
   });
   server.listen(8787, "0.0.0.0", () => {
     process.stdout.write(`publishing api listening on :8787 (${config.nodeEnv})\n`);
