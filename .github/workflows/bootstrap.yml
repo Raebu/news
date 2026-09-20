@@ -1,0 +1,31 @@
+name: Bootstrap foundation
+on:
+  push:
+    paths:
+      - .bootstrap-trigger
+permissions:
+  contents: write
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch verified source bundle
+        env:
+          BOOTSTRAP_URL: "https://sdmntprdenmarkeast.oaiusercontent.com/files/00000000-d4cc-8210-98f1-c2022ddef548/raw?se=2026-09-20T01%3A08%3A54Z&sp=r&sv=2026-02-06&sr=b&scid=edd50de7-421a-5812-9dd7-7d9a8b0acbc4&skoid=b32d65cd-c8f1-46fb-90df-c208671889d4&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-19T21%3A25%3A08Z&ske=2026-09-20T21%3A25%3A08Z&sks=b&skv=2026-02-06&sig=5likaupJ0MUcsQJR8WL2RAoA46%2B6abomHPH43a7u1e0%3D"
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error "$BOOTSTRAP_URL" -o /tmp/news-foundation.tgz
+          echo "e1438ec11f18f64b577200ffd2ff09d1be0469e4523af167c3243a82c6e465c5  /tmp/news-foundation.tgz" | sha256sum -c -
+          tar -xzf /tmp/news-foundation.tgz
+          rm -f .bootstrap-trigger .github/workflows/bootstrap.yml
+      - name: Commit foundation
+        run: |
+          set -euo pipefail
+          git config user.name "raeburn-news-bootstrap"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: establish secure publishing engine foundation"
+          git push origin HEAD:main
