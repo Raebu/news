@@ -1,0 +1,26 @@
+{
+  "name": "@raeburn/publishing-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-tenant publishing engine and AI newsroom for the Raeburn Group.",
+  "type": "module",
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": "22.16.x",
+    "npm": "10.9.x"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "check": "npm run lint && npm run typecheck && npm run test && npm run migrations:validate && npm run secrets:scan",
+    "lint": "node scripts/lint.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "migrations:validate": "node scripts/validate-migrations.mjs",
+    "secrets:scan": "node scripts/scan-secrets.mjs",
+    "api": "node --experimental-strip-types apps/api/src/server.ts",
+    "worker": "node --experimental-strip-types apps/worker/src/worker.ts"
+  }
+}

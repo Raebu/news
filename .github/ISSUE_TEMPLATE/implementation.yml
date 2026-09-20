@@ -1,0 +1,22 @@
+name: Implementation task
+description: Track delivery work against the master programme workbook.
+title: "[NEWS-###] "
+body:
+  - type: input
+    id: tracker
+    attributes:
+      label: Master tracker ID
+      placeholder: NEWS-###
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Production outcome
+      description: Define observable behavior and done evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Security/compliance/failure-path considerations
