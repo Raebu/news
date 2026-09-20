@@ -197,3 +197,15 @@ test("publisher domain rejections are surfaced as conflicts, not malformed-input
   assert.equal(response.status, 409);
   assert.equal((response.body["error"] as {code:string}).code, "publish_conflict");
 });
+
+
+test("malformed request targets and readiness failures do not escape bounded error responses", async () => {
+  const malformed = await routeApiRequest({ method:"GET", path:"http://[", headers:{} }, { readiness, version:"0.2.0" });
+  assert.equal(malformed.status, 400);
+  assert.equal((malformed.body["error"] as {code:string}).code, "invalid_request");
+
+  const brokenReadiness = { async check(): Promise<{ready:boolean}> { throw new Error("secret provider diagnostic"); } };
+  const readinessFailure = await routeApiRequest({ method:"GET", path:"/readyz", headers:{} }, { readiness:brokenReadiness, version:"0.2.0" });
+  assert.equal(readinessFailure.status, 500);
+  assert.equal(JSON.stringify(readinessFailure.body).includes("secret provider diagnostic"), false);
+});

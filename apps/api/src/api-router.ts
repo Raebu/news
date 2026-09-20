@@ -202,18 +202,23 @@ export async function routeApiRequest(
 ): Promise<ApiRouteResponse> {
   const id = requestId(request.headers);
   const method = request.method.toUpperCase();
-  const url = new URL(request.path, "https://internal.invalid");
-
-  if (method === "GET" && url.pathname === "/healthz") return ok(id, 200, { ok: true });
-  if (method === "GET" && url.pathname === "/version") return ok(id, 200, { version: dependencies.version });
-  if (method === "GET" && url.pathname === "/readyz") {
-    const state = await dependencies.readiness.check();
-    return state.ready
-      ? ok(id, 200, { ready: true })
-      : ok(id, 503, { ready: false, reason: state.reason ?? "dependency unavailable" });
-  }
 
   try {
+    let url: URL;
+    try {
+      url = new URL(request.path, "https://internal.invalid");
+    } catch {
+      throw new DomainInvariantError("request target is invalid.");
+    }
+
+    if (method === "GET" && url.pathname === "/healthz") return ok(id, 200, { ok: true });
+    if (method === "GET" && url.pathname === "/version") return ok(id, 200, { version: dependencies.version });
+    if (method === "GET" && url.pathname === "/readyz") {
+      const state = await dependencies.readiness.check();
+      return state.ready
+        ? ok(id, 200, { ready: true })
+        : ok(id, 503, { ready: false, reason: "dependency unavailable" });
+    }
     if (method === "GET" && url.pathname === "/articles") {
       if (!dependencies.verifier) return serviceUnavailable(id, "service authentication");
       if (!dependencies.publicArticles) return serviceUnavailable(id, "public article repository");

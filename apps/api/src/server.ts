@@ -28,19 +28,35 @@ function normalizeHeaders(headers: IncomingMessage["headers"]): Record<string, s
 async function readRequestBody(request: IncomingMessage, maximumBytes = 65_536): Promise<string | undefined> {
   if (request.method !== "POST" && request.method !== "PUT" && request.method !== "PATCH") return undefined;
   return await new Promise<string>((resolve, reject) => {
+    const decoder = new TextDecoder();
     let body = "";
     let bytes = 0;
+    let settled = false;
     request.on("data", (chunk) => {
-      const text = typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
-      bytes += new TextEncoder().encode(text).byteLength;
-      if (bytes > maximumBytes) {
-        reject(new Error("request body exceeds 64 KiB."));
-        return;
+      if (settled) return;
+      if (typeof chunk === "string") {
+        bytes += new TextEncoder().encode(chunk).byteLength;
+        body += chunk;
+      } else {
+        bytes += chunk.byteLength;
+        body += decoder.decode(chunk, { stream: true });
       }
-      body += text;
+      if (bytes > maximumBytes) {
+        settled = true;
+        reject(new Error("request body exceeds 64 KiB."));
+      }
     });
-    request.on("end", () => resolve(body));
-    request.on("error", reject);
+    request.on("end", () => {
+      if (settled) return;
+      body += decoder.decode();
+      settled = true;
+      resolve(body);
+    });
+    request.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
   });
 }
 
