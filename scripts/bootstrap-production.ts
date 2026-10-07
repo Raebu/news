@@ -40,6 +40,11 @@ const policy = {
   distributionChannels: ["website"]
 };
 
+const smokePolicy = {
+  ...policy,
+  distributionChannels: ["website", "newsletter"]
+};
+
 try {
   const result = await sql.begin(async (tx) => {
     const tenants = await tx`
@@ -64,7 +69,7 @@ try {
       insert into tenants (slug, name, publishing_policy)
       values (
         ${smokeTenantSlug}, ${smokeTenantName},
-        ${tx.json(policy as never)}
+        ${tx.json(smokePolicy as never)}
       )
       on conflict (slug) do update set
         name = excluded.name,
