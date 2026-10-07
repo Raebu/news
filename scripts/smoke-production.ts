@@ -90,29 +90,57 @@ try {
     throw new Error(`smoke test timed out; last article state was ${status || "not-created"}`);
   }
 
-  const evidence = await sql`
-    select
-      (select count(*)::int from generation_runs where article_id::text = ${articleId}) as generation_runs,
-      (select count(*)::int from article_sources where article_id::text = ${articleId}) as sources,
-      (select count(*)::int from editorial_reviews where article_id::text = ${articleId} and outcome = 'passed') as passed_reviews,
-      (select count(*)::int from media_assets where article_id::text = ${articleId} and qa_status = 'passed') as passed_media,
-      (
-        select count(*)::int
-        from distribution_deliveries dd
-        join content_packages cp on cp.id = dd.content_package_id
-        where cp.article_id::text = ${articleId}
-          and dd.channel = 'newsletter'
-          and dd.state = 'delivered'
-      ) as delivered_newsletters
-  `;
-  const proof = evidence[0];
+  let proof: Record<string, unknown> | undefined;
+  while (Date.now() < deadline) {
+    const evidence = await sql`
+      select
+        (select count(*)::int from generation_runs where article_id::text = ${articleId}) as generation_runs,
+        (select count(*)::int from article_sources where article_id::text = ${articleId}) as sources,
+        (select count(*)::int from editorial_reviews where article_id::text = ${articleId} and outcome = 'passed') as passed_reviews,
+        (select count(*)::int from media_assets where article_id::text = ${articleId} and qa_status = 'passed') as passed_media,
+        (
+          select count(*)::int
+          from distribution_deliveries dd
+          join content_packages cp on cp.id = dd.content_package_id
+          where cp.article_id::text = ${articleId}
+            and dd.channel = 'newsletter'
+            and dd.state = 'delivered'
+        ) as delivered_newsletters
+    `;
+    proof = evidence[0] as Record<string, unknown> | undefined;
+    if (proof &&
+        Number(proof["generation_runs"]) >= 3 &&
+        Number(proof["sources"]) >= 2 &&
+        Number(proof["passed_reviews"]) >= 2 &&
+        Number(proof["passed_media"]) >= 1 &&
+        Number(proof["delivered_newsletters"]) >= 1) {
+      break;
+    }
+
+    const distributionJobs = await sql`
+      select state, attempt_count, last_error_code
+      from newsroom_runs
+      where signal_id::text = ${signalId} and stage = 'distribute'
+      order by created_at desc
+      limit 1
+    `;
+    const distributionJob = distributionJobs[0];
+    if (distributionJob && String(distributionJob["state"]) === "dead_letter") {
+      throw new Error(
+        `distribution dead-lettered after ${String(distributionJob["attempt_count"])} attempts: ${String(distributionJob["last_error_code"] ?? "unknown")}`
+      );
+    }
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 10_000));
+  }
+
   if (!proof ||
       Number(proof["generation_runs"]) < 3 ||
       Number(proof["sources"]) < 2 ||
       Number(proof["passed_reviews"]) < 2 ||
       Number(proof["passed_media"]) < 1 ||
       Number(proof["delivered_newsletters"]) < 1) {
-    throw new Error(`publication evidence is incomplete: ${JSON.stringify(proof ?? {})}`);
+    throw new Error(`publication evidence timed out: ${JSON.stringify(proof ?? {})}`);
   }
 
   const publicRead = await fetch(`${apiUrl}/articles/${encodeURIComponent(slug)}`, {
