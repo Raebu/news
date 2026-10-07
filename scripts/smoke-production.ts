@@ -31,16 +31,16 @@ try {
     headers,
     body: JSON.stringify({
       signalType: "production-smoke",
-      title: `Raeburn Publishing Engine production smoke test ${new Date().toISOString()}`,
+      title: "Neon Functions support serverless JavaScript and TypeScript functions with scheduled triggers",
       sourceRefs: [
-        "https://github.com/Raebu/news",
-        "https://neon.com/docs/compute/functions/overview"
+        "https://neon.com/docs/functions/functions",
+        "https://neon.com/docs/functions/triggers"
       ],
       importance: 50,
       eventAt: new Date().toISOString(),
       provenance: {
         type: "controlled-smoke-test",
-        note: "Synthetic operational verification; not intended as a real news claim."
+        note: "Controlled smoke fixture using stable, externally verifiable Neon product facts; not intended for the real editorial tenant."
       },
       schemaVersion: "1"
     })
