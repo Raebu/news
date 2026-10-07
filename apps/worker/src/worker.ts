@@ -1,3 +1,12 @@
+import { readRuntimeConfig } from "../../../packages/config/src/env.ts";
+import {
+  createDatabase,
+  PostgresQueueAdapter
+} from "../../../packages/postgres/src/runtime.ts";
+import {
+  ProductionNewsroomRuntime,
+  readProductionNewsroomEnvironment
+} from "../../../packages/postgres/src/newsroom-runtime.ts";
 import { pumpOutbox, type OutboxDispatcher, type OutboxStore } from "../../../packages/workflow/src/outbox.ts";
 
 export const JOB_TYPES = [
@@ -98,6 +107,41 @@ export async function processOutboxBatch(input: {
   return await pumpOutbox(input.store, input.dispatcher, input);
 }
 
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
+export async function startProductionWorker(): Promise<void> {
+  const config = readRuntimeConfig(process.env);
+  const sql = createDatabase(config.databaseUrl);
+  const env = readProductionNewsroomEnvironment(process.env, {
+    publicBaseUrl: config.publicBaseUrl,
+    aiPublishingEnabled: config.aiPublishingEnabled
+  });
+  const runtime = new ProductionNewsroomRuntime(sql, env);
+  const queue = new PostgresQueueAdapter(sql);
+  const handlers = runtime.handlers();
+
+  process.stdout.write("publishing worker started\n");
+  try {
+    for (;;) {
+      const result = await processQueueBatch({
+        queue,
+        handlers,
+        batchSize: 5,
+        maxAttempts: 5,
+        now: () => new Date()
+      });
+      if (result.processed === 0) await delay(2_000);
+    }
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 if (process.env["RAEBURN_START_WORKER"] === "true") {
-  process.stdout.write("worker runtime loaded; compose QueueAdapter and OutboxStore in the deployment entrypoint.\n");
+  void startProductionWorker().catch((error: unknown) => {
+    process.stderr.write(`publishing worker fatal error: ${error instanceof Error ? error.message : "unknown"}\n`);
+    process.exitCode = 1;
+  });
 }
