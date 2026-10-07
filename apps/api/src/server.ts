@@ -1,5 +1,14 @@
 import { createServer, type IncomingMessage } from "node:http";
 import { readRuntimeConfig } from "../../../packages/config/src/env.ts";
+import {
+  createDatabase,
+  PostgresPublicArticleRepository,
+  PostgresPublisher,
+  PostgresReadinessProbe,
+  PostgresServiceCredentialVerifier,
+  PostgresSignals
+} from "../../../packages/postgres/src/runtime.ts";
+import { PublicArticleService } from "../../../packages/articles/src/public-articles.ts";
 import { routeApiRequest, type ReadinessProbe } from "./api-router.ts";
 
 export interface ApiResponse {
@@ -62,12 +71,14 @@ async function readRequestBody(request: IncomingMessage, maximumBytes = 65_536):
 
 export function startServer(): void {
   const config = readRuntimeConfig(process.env);
-  const readiness: ReadinessProbe = {
-    async check() {
-      return { ready: false, reason: "database readiness probe not configured" };
-    }
-  };
-  const version = "0.2.0";
+  const sql = createDatabase(config.databaseUrl);
+  const readiness = new PostgresReadinessProbe(sql);
+  const verifier = new PostgresServiceCredentialVerifier(sql);
+  const publicArticles = new PublicArticleService(new PostgresPublicArticleRepository(sql));
+  const publisher = new PostgresPublisher(sql, config.aiPublishingEnabled);
+  const signals = new PostgresSignals(sql);
+  const version = "0.3.0";
+
   const server = createServer(async (request, response) => {
     try {
       const body = await readRequestBody(request);
@@ -76,7 +87,7 @@ export function startServer(): void {
         path: request.url ?? "/",
         headers: normalizeHeaders(request.headers),
         ...(body === undefined ? {} : { body })
-      }, { readiness, version });
+      }, { readiness, version, verifier, publicArticles, publisher, signals });
 
       response.statusCode = result.status;
       for (const [name, value] of Object.entries(result.headers)) response.setHeader(name, value);
@@ -89,6 +100,15 @@ export function startServer(): void {
       response.end(JSON.stringify({ error: { code: "payload_too_large", message: "request body exceeds limit." } }));
     }
   });
+
+  const shutdown = () => {
+    server.close(() => {
+      void sql.end({ timeout: 5 }).finally(() => process.exit(0));
+    });
+  };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
+
   server.listen(8787, "0.0.0.0", () => {
     process.stdout.write(`publishing api listening on :8787 (${config.nodeEnv})\n`);
   });
