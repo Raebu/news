@@ -7,7 +7,7 @@ import {
 } from "../packages/providers/src/http-providers.ts";
 
 test("Resend newsletter adapter creates then sends a segment broadcast", async () => {
-  const requests: Array<{ url: string; body?: string; headers: Readonly<Record<string, string>> }> = [];
+  const requests: Array<{ url: string; body: string | undefined; headers: Readonly<Record<string, string>> }> = [];
   const fetcher: FetchLike = async (url, init) => {
     requests.push({ url, body: init.body, headers: init.headers });
     return {
