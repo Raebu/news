@@ -87,7 +87,7 @@ export class WebhookDistributionAdapter implements DistributionAdapter {
   public readonly channel = "webhook" as const;
   readonly #fetcher: FetchLike;
   readonly #url: string;
-  readonly #token?: string;
+  readonly #token: string | undefined;
 
   public constructor(input: { readonly fetcher: FetchLike; readonly url: string; readonly token?: string }) {
     this.#fetcher = input.fetcher;
