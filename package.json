@@ -28,5 +28,8 @@
   },
   "dependencies": {
     "postgres": "3.4.7"
+  },
+  "devDependencies": {
+    "@neon/config": "^1.8.4"
   }
 }
