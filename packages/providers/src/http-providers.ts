@@ -169,6 +169,7 @@ export class CloudinaryMediaProvider implements MediaProvider {
     const result = await response.json() as {
       readonly asset_id?: unknown;
       readonly secure_url?: unknown;
+      readonly public_id?: unknown;
       readonly width?: unknown;
       readonly height?: unknown;
     };
@@ -178,6 +179,7 @@ export class CloudinaryMediaProvider implements MediaProvider {
 
     return {
       assetId: result.asset_id,
+      ...(typeof result.public_id === "string" ? { publicId: result.public_id } : {}),
       url: result.secure_url,
       altText,
       ...(typeof result.width === "number" ? { width: result.width } : {}),
