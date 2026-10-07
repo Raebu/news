@@ -19,6 +19,8 @@ const sql = postgres(databaseUrl, { max: 1, prepare: true });
 const tenantSlug = "raeburn-group";
 const tenantName = "The Raeburn Group";
 const primaryDomain = "theraeburngroup.com";
+const smokeTenantSlug = "raeburn-smoke";
+const smokeTenantName = "Raeburn Publishing Smoke Test";
 const service = "publishing-admin";
 const permissions = [
   "article:read",
@@ -58,39 +60,65 @@ try {
     if (!tenant) throw new Error("tenant bootstrap failed");
     const tenantId = String(tenant["id"]);
 
-    await tx`
-      insert into tenant_provider_bindings (tenant_id, provider, purpose, secret_ref, config)
-      values
-        (${tenantId}::uuid, 'openai', 'newsroom', 'env:OPENAI_API_KEY', '{}'::jsonb),
-        (${tenantId}::uuid, 'cloudinary', 'media', 'env:CLOUDINARY_API_KEY', ${tx.json({
+    const smokeTenants = await tx`
+      insert into tenants (slug, name, publishing_policy)
+      values (
+        ${smokeTenantSlug}, ${smokeTenantName},
+        ${tx.json(policy as never)}
+      )
+      on conflict (slug) do update set
+        name = excluded.name,
+        publishing_policy = excluded.publishing_policy,
+        active = true,
+        updated_at = now()
+      returning id::text as id
+    `;
+    const smokeTenant = smokeTenants[0];
+    if (!smokeTenant) throw new Error("smoke tenant bootstrap failed");
+    const smokeTenantId = String(smokeTenant["id"]);
+
+    for (const currentTenantId of [tenantId, smokeTenantId]) {
+      await tx`
+        insert into tenant_provider_bindings (tenant_id, provider, purpose, secret_ref, config)
+        values
+        (${currentTenantId}::uuid, 'openai', 'newsroom', 'env:OPENAI_API_KEY', '{}'::jsonb),
+        (${currentTenantId}::uuid, 'cloudinary', 'media', 'env:CLOUDINARY_API_KEY', ${tx.json({
           cloudName: "u7dpgaxh",
           assetFolder: "Cloudinary/The_Raeburn_Holding_Group_Ltd/news"
         } as never)}),
-        (${tenantId}::uuid, 'resend', 'newsletter', 'env:RESEND_API_KEY', ${tx.json({
+        (${currentTenantId}::uuid, 'resend', 'newsletter', 'env:RESEND_API_KEY', ${tx.json({
           segmentId: "c2367d47-6eb0-4b2b-96e4-398e0cf3a340",
           from: "The Raeburn Group <news@theraeburngroup.com>",
           replyTo: "contact@theraeburngroup.com"
         } as never)})
-      on conflict (tenant_id, provider, purpose) do update set
-        secret_ref = excluded.secret_ref,
-        config = excluded.config,
-        active = true,
-        updated_at = now()
-    `;
+        on conflict (tenant_id, provider, purpose) do update set
+          secret_ref = excluded.secret_ref,
+          config = excluded.config,
+          active = true,
+          updated_at = now()
+      `;
+    }
 
     const existing = await tx`
       select sc.id::text as id
       from service_credentials sc
-      join service_credential_tenants sct on sct.credential_id = sc.id
       where sc.service = ${service}
         and sc.active = true
         and sc.revoked_at is null
-        and sct.tenant_id = ${tenantId}::uuid
+      order by sc.created_at desc
       limit 1
     `;
 
     if (existing.length > 0) {
-      return { tenantId, credential: null };
+      const credentialId = String(existing[0]?.["id"]);
+      await tx`
+        insert into service_credential_tenants (credential_id, tenant_id)
+        values
+          (${credentialId}::uuid, ${tenantId}::uuid),
+          (${credentialId}::uuid, ${smokeTenantId}::uuid)
+        on conflict do nothing
+      `;
+      return { tenantId, smokeTenantId, credential: null };
     }
 
     const credential = `rpub_${randomHex(32)}`;
@@ -105,14 +133,17 @@ try {
 
     await tx`
       insert into service_credential_tenants (credential_id, tenant_id)
-      values (${String(created["id"])}::uuid, ${tenantId}::uuid)
+      values
+        (${String(created["id"])}::uuid, ${tenantId}::uuid),
+        (${String(created["id"])}::uuid, ${smokeTenantId}::uuid)
       on conflict do nothing
     `;
 
-    return { tenantId, credential };
+    return { tenantId, smokeTenantId, credential };
   });
 
   process.stdout.write(`Tenant: ${tenantSlug} (${result.tenantId})\n`);
+  process.stdout.write(`Smoke tenant: ${smokeTenantSlug} (${result.smokeTenantId})\n`);
   process.stdout.write("Policy: autonomous newsroom enabled; distribution channels = website only\n");
   if (result.credential) {
     process.stdout.write("\nSAVE THIS SERVICE CREDENTIAL NOW. It is shown only by this bootstrap run.\n");
