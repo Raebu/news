@@ -1,8 +1,8 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const roots = ["apps","packages","scripts","tests","db","docs",".github"];
-const rootFiles = ["package.json","package-lock.json","tsconfig.json","README.md","SECURITY.md",".env.example",".gitignore",".nvmrc"];
+const roots = ["apps","packages","functions","scripts","tests","db","docs",".github"];
+const rootFiles = ["package.json","package-lock.json","tsconfig.json","README.md","SECURITY.md",".env.example",".gitignore",".nvmrc","neon.ts"];
 const extensions = new Set([".ts",".mjs",".json",".md",".sql",".yml",".yaml"]);
 const failures = [];
 

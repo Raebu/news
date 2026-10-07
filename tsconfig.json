@@ -16,8 +16,17 @@
     "noEmit": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "lib": ["ES2023", "DOM"],
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
     "types": []
   },
-  "include": ["packages/**/*.ts", "apps/**/*.ts", "tests/**/*.ts", "types/**/*.d.ts"]
+  "include": [
+    "packages/**/*.ts",
+    "apps/**/*.ts",
+    "tests/**/*.ts",
+    "types/**/*.d.ts",
+    "functions/**/*.ts"
+  ]
 }
