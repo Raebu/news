@@ -42,10 +42,14 @@ export function createDatabase(databaseUrl: string): Database {
 }
 
 export class PostgresReadinessProbe {
-  public constructor(private readonly sql: Database) {}
+  readonly #sql: Database;
+
+  public constructor(sql: Database) {
+    this.#sql = sql;
+  }
   public async check(): Promise<{ readonly ready: boolean; readonly reason?: string }> {
     try {
-      await this.sql`select 1 as ok`;
+      await this.#sql`select 1 as ok`;
       return { ready: true };
     } catch {
       return { ready: false, reason: "database unavailable" };
@@ -54,11 +58,15 @@ export class PostgresReadinessProbe {
 }
 
 export class PostgresServiceCredentialVerifier implements ServiceCredentialVerifier {
-  public constructor(private readonly sql: Database) {}
+  readonly #sql: Database;
+
+  public constructor(sql: Database) {
+    this.#sql = sql;
+  }
 
   public async verify(service: string, credential: string): Promise<ServiceIdentity | null> {
     const digest = await sha256Hex(credential);
-    const rows = await this.sql`
+    const rows = await this.#sql`
       select
         sc.service,
         sc.permissions,
@@ -85,19 +93,23 @@ export class PostgresServiceCredentialVerifier implements ServiceCredentialVerif
 }
 
 export class PostgresScopedIdempotencyStore implements IdempotencyStore {
-  public constructor(
-    private readonly sql: Database,
-    private readonly tenantSlug: string,
-    private readonly scope: string
-  ) {}
+  readonly #sql: Database;
+  readonly #tenantSlug: string;
+  readonly #scope: string;
+
+  public constructor(sql: Database, tenantSlug: string, scope: string) {
+    this.#sql = sql;
+    this.#tenantSlug = tenantSlug;
+    this.#scope = scope;
+  }
 
   public async get<T>(key: string): Promise<IdempotencyRecord<T> | null> {
-    const rows = await this.sql`
+    const rows = await this.#sql`
       select ir.idempotency_key, ir.fingerprint, ir.state, ir.result
       from idempotency_records ir
       join tenants t on t.id = ir.tenant_id
-      where t.slug = ${this.tenantSlug}
-        and ir.scope = ${this.scope}
+      where t.slug = ${this.#tenantSlug}
+        and ir.scope = ${this.#scope}
         and ir.idempotency_key = ${key}
       limit 1
     `;
@@ -111,11 +123,11 @@ export class PostgresScopedIdempotencyStore implements IdempotencyStore {
   }
 
   public async createProcessing(key: string, fingerprint: string): Promise<boolean> {
-    const rows = await this.sql`
+    const rows = await this.#sql`
       insert into idempotency_records (tenant_id, scope, idempotency_key, fingerprint, state)
-      select t.id, ${this.scope}, ${key}, ${fingerprint}, 'processing'
+      select t.id, ${this.#scope}, ${key}, ${fingerprint}, 'processing'
       from tenants t
-      where t.slug = ${this.tenantSlug} and t.active = true
+      where t.slug = ${this.#tenantSlug} and t.active = true
       on conflict (tenant_id, scope, idempotency_key) do nothing
       returning idempotency_key
     `;
@@ -123,13 +135,13 @@ export class PostgresScopedIdempotencyStore implements IdempotencyStore {
   }
 
   public async complete<T>(key: string, fingerprint: string, result: T): Promise<void> {
-    const rows = await this.sql`
+    const rows = await this.#sql`
       update idempotency_records ir
-      set state = 'completed', result = ${this.sql.json(result as never)}, updated_at = now()
+      set state = 'completed', result = ${this.#sql.json(result as never)}, updated_at = now()
       from tenants t
       where ir.tenant_id = t.id
-        and t.slug = ${this.tenantSlug}
-        and ir.scope = ${this.scope}
+        and t.slug = ${this.#tenantSlug}
+        and ir.scope = ${this.#scope}
         and ir.idempotency_key = ${key}
         and ir.fingerprint = ${fingerprint}
         and ir.state = 'processing'
@@ -141,13 +153,13 @@ export class PostgresScopedIdempotencyStore implements IdempotencyStore {
   }
 
   public async fail(key: string, fingerprint: string): Promise<void> {
-    await this.sql`
+    await this.#sql`
       update idempotency_records ir
       set state = 'failed', updated_at = now()
       from tenants t
       where ir.tenant_id = t.id
-        and t.slug = ${this.tenantSlug}
-        and ir.scope = ${this.scope}
+        and t.slug = ${this.#tenantSlug}
+        and ir.scope = ${this.#scope}
         and ir.idempotency_key = ${key}
         and ir.fingerprint = ${fingerprint}
         and ir.state = 'processing'
@@ -156,10 +168,14 @@ export class PostgresScopedIdempotencyStore implements IdempotencyStore {
 }
 
 export class PostgresSignalRepository implements SignalRepository {
-  public constructor(private readonly sql: Database) {}
+  readonly #sql: Database;
+
+  public constructor(sql: Database) {
+    this.#sql = sql;
+  }
 
   public async createSignal(input: SignalCommand): Promise<{ readonly signalId: string; readonly createdAt: string }> {
-    return await this.sql.begin(async (tx) => {
+    return await this.#sql.begin(async (tx) => {
       const inserted = await tx`
         insert into story_signals (
           tenant_id, signal_type, title, source_refs, importance, event_at,
@@ -215,7 +231,11 @@ function rowToPublicArticle(row: Record<string, unknown>): PublicArticleRecord {
 }
 
 export class PostgresPublicArticleRepository implements PublicArticleRepository {
-  public constructor(private readonly sql: Database) {}
+  readonly #sql: Database;
+
+  public constructor(sql: Database) {
+    this.#sql = sql;
+  }
 
   public async listCandidates(input: {
     readonly tenantId: string;
@@ -227,7 +247,7 @@ export class PostgresPublicArticleRepository implements PublicArticleRepository 
     }
     const take = input.limit + 1;
     const rows = input.cursor === null
-      ? await this.sql`
+      ? await this.#sql`
           select a.id::text, t.slug as tenant_slug, a.slug, a.status, a.current_version,
                  av.headline, av.standfirst, av.body, av.category,
                  a.published_at, a.updated_at, a.featured
@@ -240,7 +260,7 @@ export class PostgresPublicArticleRepository implements PublicArticleRepository 
           order by a.published_at desc, a.id desc
           limit ${take}
         `
-      : await this.sql`
+      : await this.#sql`
           select a.id::text, t.slug as tenant_slug, a.slug, a.status, a.current_version,
                  av.headline, av.standfirst, av.body, av.category,
                  a.published_at, a.updated_at, a.featured
@@ -264,7 +284,7 @@ export class PostgresPublicArticleRepository implements PublicArticleRepository 
   }
 
   public async findCandidateBySlug(tenantId: string, slug: string): Promise<PublicArticleRecord | null> {
-    const rows = await this.sql`
+    const rows = await this.#sql`
       select a.id::text, t.slug as tenant_slug, a.slug, a.status, a.current_version,
              av.headline, av.standfirst, av.body, av.category,
              a.published_at, a.updated_at, a.featured
@@ -280,10 +300,14 @@ export class PostgresPublicArticleRepository implements PublicArticleRepository 
 }
 
 export class PostgresArticleRepository implements ArticleRepository {
-  public constructor(private readonly sql: Database) {}
+  readonly #sql: Database;
+
+  public constructor(sql: Database) {
+    this.#sql = sql;
+  }
 
   public async getPublishCandidate(tenantId: string, articleId: string): Promise<PublishCandidate | null> {
-    const rows = await this.sql`
+    const rows = await this.#sql`
       select
         a.id::text as article_id,
         t.slug as tenant_slug,
@@ -367,7 +391,7 @@ export class PostgresArticleRepository implements ArticleRepository {
     readonly actorId: string;
     readonly idempotencyKey: string;
   }): Promise<{ readonly version: number; readonly publishedAt: string } | null> {
-    return await this.sql.begin(async (tx) => {
+    return await this.#sql.begin(async (tx) => {
       const updated = await tx`
         update articles a
         set status = 'PUBLISHED', published_at = now(), updated_at = now(), lock_version = lock_version + 1
@@ -412,13 +436,16 @@ export class PostgresArticleRepository implements ArticleRepository {
 }
 
 export class PostgresPublishingPolicyProvider implements PublishingPolicyProvider {
-  public constructor(
-    private readonly sql: Database,
-    private readonly globalAiPublishingEnabled: boolean
-  ) {}
+  readonly #sql: Database;
+  readonly #globalAiPublishingEnabled: boolean;
+
+  public constructor(sql: Database, globalAiPublishingEnabled: boolean) {
+    this.#sql = sql;
+    this.#globalAiPublishingEnabled = globalAiPublishingEnabled;
+  }
 
   public async getPolicy(tenantId: string): Promise<{ readonly autonomyLevel: AutonomyLevel; readonly aiPublishingEnabled: boolean }> {
-    const rows = await this.sql`
+    const rows = await this.#sql`
       select publishing_policy
       from tenants
       where slug = ${tenantId} and active = true
@@ -433,33 +460,40 @@ export class PostgresPublishingPolicyProvider implements PublishingPolicyProvide
         ? configuredLevel
         : "human";
     const tenantEnabled = policy["aiPublishingEnabled"] === true || policy["allowAutonomousPublish"] === true;
-    return { autonomyLevel, aiPublishingEnabled: this.globalAiPublishingEnabled && tenantEnabled };
+    return { autonomyLevel, aiPublishingEnabled: this.#globalAiPublishingEnabled && tenantEnabled };
   }
 }
 
 export class PostgresPublisher {
-  public constructor(
-    private readonly sql: Database,
-    private readonly globalAiPublishingEnabled: boolean
-  ) {}
+  readonly #sql: Database;
+  readonly #globalAiPublishingEnabled: boolean;
+
+  public constructor(sql: Database, globalAiPublishingEnabled: boolean) {
+    this.#sql = sql;
+    this.#globalAiPublishingEnabled = globalAiPublishingEnabled;
+  }
 
   public async publish(command: PublishCommand): Promise<PublishResult> {
     const service = new PublisherService(
-      new PostgresArticleRepository(this.sql),
-      new PostgresPublishingPolicyProvider(this.sql, this.globalAiPublishingEnabled),
-      new PostgresScopedIdempotencyStore(this.sql, command.tenantId, "publish")
+      new PostgresArticleRepository(this.#sql),
+      new PostgresPublishingPolicyProvider(this.#sql, this.#globalAiPublishingEnabled),
+      new PostgresScopedIdempotencyStore(this.#sql, command.tenantId, "publish")
     );
     return await service.publish(command);
   }
 }
 
 export class PostgresSignals {
-  public constructor(private readonly sql: Database) {}
+  readonly #sql: Database;
+
+  public constructor(sql: Database) {
+    this.#sql = sql;
+  }
 
   public async submit(command: SignalCommand): Promise<SignalResult> {
     const service = new SignalService(
-      new PostgresSignalRepository(this.sql),
-      new PostgresScopedIdempotencyStore(this.sql, command.tenantId, "signal")
+      new PostgresSignalRepository(this.#sql),
+      new PostgresScopedIdempotencyStore(this.#sql, command.tenantId, "signal")
     );
     return await service.submit(command);
   }
@@ -476,10 +510,14 @@ function stageToJobType(stage: string): NewsroomJob["type"] {
 }
 
 export class PostgresQueueAdapter implements QueueAdapter {
-  public constructor(private readonly sql: Database) {}
+  readonly #sql: Database;
+
+  public constructor(sql: Database) {
+    this.#sql = sql;
+  }
 
   public async claim(limit: number): Promise<readonly NewsroomJob[]> {
-    return await this.sql.begin(async (tx) => {
+    return await this.#sql.begin(async (tx) => {
       const rows = await tx`
         with candidates as (
           select nr.id
@@ -521,7 +559,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
   }
 
   public async complete(jobId: string): Promise<void> {
-    await this.sql`
+    await this.#sql`
       update newsroom_runs
       set state = 'completed', locked_at = null, lock_token = null, updated_at = now()
       where id::text = ${jobId} and state = 'processing'
@@ -529,7 +567,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
   }
 
   public async retry(jobId: string, availableAt: string, errorCode: string): Promise<void> {
-    await this.sql`
+    await this.#sql`
       update newsroom_runs
       set state = 'queued', available_at = ${availableAt}::timestamptz,
           locked_at = null, lock_token = null, last_error_code = ${errorCode}, updated_at = now()
@@ -538,7 +576,7 @@ export class PostgresQueueAdapter implements QueueAdapter {
   }
 
   public async deadLetter(jobId: string, errorCode: string): Promise<void> {
-    await this.sql`
+    await this.#sql`
       update newsroom_runs
       set state = 'dead_letter', locked_at = null, lock_token = null,
           last_error_code = ${errorCode}, updated_at = now()
@@ -548,10 +586,14 @@ export class PostgresQueueAdapter implements QueueAdapter {
 }
 
 export class PostgresOutboxStore implements OutboxStore {
-  public constructor(private readonly sql: Database) {}
+  readonly #sql: Database;
+
+  public constructor(sql: Database) {
+    this.#sql = sql;
+  }
 
   public async claim(limit: number): Promise<readonly ClaimedOutboxEvent[]> {
-    return await this.sql.begin(async (tx) => {
+    return await this.#sql.begin(async (tx) => {
       const rows = await tx`
         with candidates as (
           select oe.id
@@ -597,7 +639,7 @@ export class PostgresOutboxStore implements OutboxStore {
   }
 
   public async markDispatched(eventId: string, leaseToken: string): Promise<void> {
-    await this.sql`
+    await this.#sql`
       update outbox_events
       set state = 'dispatched', dispatched_at = now(), locked_at = null, lock_token = null
       where id::text = ${eventId} and lock_token::text = ${leaseToken} and state = 'processing'
@@ -605,7 +647,7 @@ export class PostgresOutboxStore implements OutboxStore {
   }
 
   public async retry(eventId: string, leaseToken: string, availableAt: string, errorCode: string): Promise<void> {
-    await this.sql`
+    await this.#sql`
       update outbox_events
       set state = 'pending', available_at = ${availableAt}::timestamptz,
           locked_at = null, lock_token = null, last_error_code = ${errorCode}
@@ -614,7 +656,7 @@ export class PostgresOutboxStore implements OutboxStore {
   }
 
   public async deadLetter(eventId: string, leaseToken: string, errorCode: string): Promise<void> {
-    await this.sql`
+    await this.#sql`
       update outbox_events
       set state = 'dead_letter', locked_at = null, lock_token = null, last_error_code = ${errorCode}
       where id::text = ${eventId} and lock_token::text = ${leaseToken} and state = 'processing'
