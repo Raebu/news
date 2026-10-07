@@ -23,7 +23,8 @@
     "secrets:scan": "node scripts/scan-secrets.mjs",
     "api": "node --experimental-strip-types apps/api/src/server.ts",
     "worker": "node --experimental-strip-types apps/worker/src/worker.ts",
-    "bootstrap:production": "node --experimental-strip-types scripts/bootstrap-production.ts"
+    "bootstrap:production": "node --experimental-strip-types scripts/bootstrap-production.ts",
+    "smoke:production": "node --experimental-strip-types scripts/smoke-production.ts"
   },
   "dependencies": {
     "postgres": "3.4.7"
