@@ -9,7 +9,7 @@ function required(name: string): string {
 const apiUrl = required("PUBLISHING_API_URL").replace(/\/$/, "");
 const credential = required("PUBLISHING_SERVICE_CREDENTIAL");
 const databaseUrl = required("DATABASE_URL_UNPOOLED");
-const tenant = "raeburn-group";
+const tenant = "raeburn-smoke";
 const service = "publishing-admin";
 const idempotencyKey = `smoke-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 const sql = postgres(databaseUrl, { max: 1, prepare: true });
