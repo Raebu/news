@@ -8,11 +8,11 @@ const sql = files.map((name) => readFileSync(new URL(name, directory), "utf8")).
 const requiredTables = [
   "tenants","articles","article_versions","article_sources","claims","claim_sources","article_claims",
   "story_signals","generation_runs","editorial_reviews","media_assets","audit_events",
-  "service_credentials","service_credential_tenants","idempotency_records","outbox_events"
+  "service_credentials","service_credential_tenants","idempotency_records","outbox_events",
+  "newsroom_runs","content_packages","distribution_deliveries","tenant_provider_bindings"
 ];
 for (const table of requiredTables) {
-  if (!new RegExp(`CREATE TABLE\\s+${table}\\b`, "i").test(sql) &&
-      !(table === "tenants" && /CREATE TABLE\s+tenants\b/i.test(sql))) {
+  if (!new RegExp(`CREATE TABLE\\s+${table}\\b`, "i").test(sql)) {
     throw new Error(`Missing required table: ${table}`);
   }
 }
@@ -28,7 +28,12 @@ const invariants = [
   ["durable idempotency", /CREATE TABLE idempotency_records/i],
   ["outbox dedupe", /UNIQUE \(tenant_id, event_type, dedupe_key\)/i],
   ["outbox dispatch index", /outbox_pending_dispatch_idx/i],
-  ["tenant brand policy", /ADD COLUMN brand_config jsonb NOT NULL DEFAULT '\{\}'::jsonb[\s\S]*ADD COLUMN publishing_policy jsonb NOT NULL DEFAULT '\{\}'::jsonb/i]
+  ["tenant brand policy", /ADD COLUMN brand_config jsonb NOT NULL DEFAULT '\{\}'::jsonb[\s\S]*ADD COLUMN publishing_policy jsonb NOT NULL DEFAULT '\{\}'::jsonb/i],
+  ["durable newsroom jobs", /CREATE TABLE newsroom_runs/i],
+  ["content-package version integrity", /FOREIGN KEY \(article_id, article_version\)[\s\S]*REFERENCES article_versions\(article_id, version\)/i],
+  ["distribution idempotency", /UNIQUE \(tenant_id, channel, idempotency_key\)/i],
+  ["secret references only", /CREATE TABLE tenant_provider_bindings[\s\S]*secret_ref text NOT NULL/i],
+  ["outbox lease token", /ALTER TABLE outbox_events[\s\S]*ADD COLUMN lock_token uuid/i]
 ];
 for (const [name, pattern] of invariants) {
   if (!pattern.test(sql)) throw new Error(`Missing migration invariant: ${name}`);
