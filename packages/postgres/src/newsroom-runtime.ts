@@ -786,6 +786,15 @@ export class ProductionNewsroomRuntime {
     if (results.some((result) => result.status === "failed")) {
       throw new Error("one or more distribution channels failed");
     }
+    await this.#sql`
+      update outbox_events
+      set state = 'dispatched', dispatched_at = now(), locked_at = null, lock_token = null
+      where tenant_id::text = ${context.tenantUuid}
+        and aggregate_type = 'article'
+        and aggregate_id = ${context.articleId}
+        and event_type = 'article.published'
+        and state in ('pending','processing')
+    `;
   }
 }
 
