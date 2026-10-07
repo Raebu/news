@@ -46,8 +46,14 @@ async function postJson(
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(payload)
   });
-  if (!response.ok) throw new Error(`provider request failed with status ${response.status}`);
-  return await response.json();
+  const responseText = await response.text();
+  if (!response.ok) {
+    const detail = responseText.trim().replace(/\s+/g, " ").slice(0, 500);
+    throw new Error(
+      `provider request failed with status ${response.status}${detail ? `: ${detail}` : ""}`
+    );
+  }
+  return responseText ? JSON.parse(responseText) : {};
 }
 
 export class ResendNewsletterAdapter implements DistributionAdapter {
