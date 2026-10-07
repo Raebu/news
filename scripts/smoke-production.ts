@@ -95,14 +95,23 @@ try {
       (select count(*)::int from generation_runs where article_id::text = ${articleId}) as generation_runs,
       (select count(*)::int from article_sources where article_id::text = ${articleId}) as sources,
       (select count(*)::int from editorial_reviews where article_id::text = ${articleId} and outcome = 'passed') as passed_reviews,
-      (select count(*)::int from media_assets where article_id::text = ${articleId} and qa_status = 'passed') as passed_media
+      (select count(*)::int from media_assets where article_id::text = ${articleId} and qa_status = 'passed') as passed_media,
+      (
+        select count(*)::int
+        from distribution_deliveries dd
+        join content_packages cp on cp.id = dd.content_package_id
+        where cp.article_id::text = ${articleId}
+          and dd.channel = 'newsletter'
+          and dd.state = 'delivered'
+      ) as delivered_newsletters
   `;
   const proof = evidence[0];
   if (!proof ||
       Number(proof["generation_runs"]) < 3 ||
       Number(proof["sources"]) < 2 ||
       Number(proof["passed_reviews"]) < 2 ||
-      Number(proof["passed_media"]) < 1) {
+      Number(proof["passed_media"]) < 1 ||
+      Number(proof["delivered_newsletters"]) < 1) {
     throw new Error(`publication evidence is incomplete: ${JSON.stringify(proof ?? {})}`);
   }
 
@@ -122,6 +131,7 @@ try {
   process.stdout.write(`Sources: ${String(proof["sources"])}\n`);
   process.stdout.write(`Passed reviews: ${String(proof["passed_reviews"])}\n`);
   process.stdout.write(`Passed media: ${String(proof["passed_media"])}\n`);
+  process.stdout.write(`Delivered newsletters: ${String(proof["delivered_newsletters"])}\n`);
 } finally {
   await sql.end({ timeout: 5 });
 }
