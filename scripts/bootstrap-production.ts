@@ -67,7 +67,7 @@ try {
           assetFolder: "Cloudinary/The_Raeburn_Holding_Group_Ltd/news"
         } as never)}),
         (${tenantId}::uuid, 'resend', 'newsletter', 'env:RESEND_API_KEY', ${tx.json({
-          segmentId: "c7674330-74b7-4c59-b5a3-783ba2690956",
+          segmentId: "c2367d47-6eb0-4b2b-96e4-398e0cf3a340",
           from: "The Raeburn Group <news@theraeburngroup.com>",
           replyTo: "contact@theraeburngroup.com"
         } as never)})
