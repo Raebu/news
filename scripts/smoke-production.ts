@@ -130,7 +130,8 @@ try {
   process.stdout.write(`Generation runs: ${String(proof["generation_runs"])}\n`);
   process.stdout.write(`Sources: ${String(proof["sources"])}\n`);
   process.stdout.write(`Passed reviews: ${String(proof["passed_reviews"])}\n`);
-  process.stdout.write(`Passed media: ${String(proof["passed_media"])}\n`);\n  process.stdout.write(`Delivered newsletters: ${String(proof["delivered_newsletters"])}\n`);
+  process.stdout.write(`Passed media: ${String(proof["passed_media"])}\n`);
+  process.stdout.write(`Delivered newsletters: ${String(proof["delivered_newsletters"])}\n`);
 } finally {
   await sql.end({ timeout: 5 });
 }
