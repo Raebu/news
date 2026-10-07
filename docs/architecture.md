@@ -1,20 +1,37 @@
-# Architecture baseline
+# Architecture
 
 ## Scope
 
-V1 focuses on the first-party Raeburn Group publishing engine: tenant-safe editorial data, evidence-backed generation, media workflow, controlled publication, consumer read APIs and distribution primitives. Semantic/vector search, self-service SaaS billing and rich-media expansion are deferred until core production evidence exists.
+The Raeburn Publishing Engine is shared first-party infrastructure for multiple brands, sites and executive-authority surfaces. It covers story signals, research, source verification, article generation, claim checks, media, editorial QA, controlled publication and distribution.
 
 ## Runtime boundaries
 
-- `apps/api`: public/internal HTTP boundary; public reads must be published-only.
-- `apps/worker`: durable job consumer once queue adapter is configured.
-- `apps/admin`: authenticated operations/editorial control centre (scaffold only today).
+- `apps/api`: authenticated service boundary, health/readiness and published-only reads.
+- `apps/worker`: durable newsroom-job and outbox processing primitives with retry/dead-letter behavior.
+- `apps/admin`: reserved operations/editorial surface; business actions must use the same authenticated service boundaries.
+- `packages/newsroom`: evidence-gated research/draft/fact-check/media/editorial orchestration.
+- `packages/distribution`: content-package fan-out with per-channel idempotency.
+- `packages/providers`: outbound provider adapters; provider failures cannot bypass editorial gates.
 - `packages/domain`: lifecycle and publication invariants.
-- `packages/security`: tenant/service authorization boundary.
-- `packages/workflow`: replay/idempotency primitives.
-- `packages/publisher`: controlled public-state transition service.
-- `db/migrations`: canonical relational schema changes.
+- `packages/security`: tenant/service authorization.
+- `packages/workflow`: idempotency, outbox leases and delivery recovery.
+- `packages/publisher`: sole public-state transition boundary.
+- `db/migrations`: canonical relational schema.
 
-## Delivery-state truth
+## Pipeline
 
-Source implementation is not treated as deployed or production-ready. Provider resources, hosted data stores, real credentials, branch protection, production deployment and legal/compliance approvals remain external or future evidence.
+Signals → Research → Draft → Claim verification → Media → Image QA → Editorial QA → READY → Publisher → Content package → Distribution.
+
+No generation or distribution provider is permitted to mutate an article directly to a public state. Autonomous publication remains an explicit tenant policy and separate permission.
+
+## Data ownership
+
+PostgreSQL holds canonical editorial/workflow truth. External systems store media or receive distributions, while their external identifiers are recorded against tenant-scoped records. Provider secrets are injected by the deployment platform and represented in tenant configuration by secret references only.
+
+## Failure semantics
+
+All retriable work is idempotent. Queue and outbox records use bounded retries, leases and dead-letter states. Unsupported/missing gated providers fail closed. Missing optional distribution adapters produce an observable skipped delivery instead of blocking canonical publication.
+
+## Production evidence
+
+A source merge does not prove production readiness. Production requires executed migrations, configured credentials/adapters, protected release controls, deployed workloads and verified end-to-end smoke tests.

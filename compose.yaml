@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      RAEBURN_START_SERVER: "true"
+      NODE_ENV: production
+      SERVICE_NAME: publishing-api
+      DATABASE_URL: ${DATABASE_URL}
+      SERVICE_SHARED_SECRET: ${SERVICE_SHARED_SECRET}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      AI_PUBLISHING_ENABLED: ${AI_PUBLISHING_ENABLED:-false}
+    ports:
+      - "8787:8787"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
