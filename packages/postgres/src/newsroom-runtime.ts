@@ -119,6 +119,7 @@ export class ProductionNewsroomRuntime {
     this.#factCheck = new OpenAIFactCheckProvider(this.#client);
     this.#editorial = new OpenAIEditorialProvider(this.#client);
     this.#media = new CloudinaryMediaProvider({
+      fetcher: fetch,
       generator: new OpenAIImageGenerator(this.#client),
       cloudName: env.cloudinaryCloudName,
       apiKey: env.cloudinaryApiKey,
@@ -689,7 +690,7 @@ export class ProductionNewsroomRuntime {
       values (
         ${context.tenantUuid}::uuid, ${context.articleId}::uuid, ${context.version},
         ${canonicalUrl}, ${draft.headline}, ${draft.standfirst}, ${draft.body},
-        ${media?.url ?? null}, ${policy.distributionChannels}
+        ${media?.url ?? null}, ${this.#sql.array([...policy.distributionChannels])}
       )
       on conflict (tenant_id, article_id, article_version)
       do update set canonical_url = excluded.canonical_url
@@ -712,18 +713,20 @@ export class ProductionNewsroomRuntime {
       deliver: async (_content, _idempotencyKey) => ({ channel: "website", status: "delivered" })
     }];
     if (this.#env.resendApiKey && this.#env.resendFrom && this.#env.resendSegmentId) {
-      adapters.push(new ResendNewsletterAdapter(
-        this.#env.resendApiKey,
-        this.#env.resendFrom,
-        this.#env.resendSegmentId,
-        this.#env.resendReplyTo
-      ));
+      adapters.push(new ResendNewsletterAdapter({
+        fetcher: fetch,
+        apiKey: this.#env.resendApiKey,
+        from: this.#env.resendFrom,
+        segmentId: this.#env.resendSegmentId,
+        ...(this.#env.resendReplyTo ? { replyTo: this.#env.resendReplyTo } : {})
+      }));
     }
     if (this.#env.distributionWebhookUrl) {
-      adapters.push(new WebhookDistributionAdapter(
-        this.#env.distributionWebhookUrl,
-        this.#env.distributionWebhookToken
-      ));
+      adapters.push(new WebhookDistributionAdapter({
+        fetcher: fetch,
+        url: this.#env.distributionWebhookUrl,
+        ...(this.#env.distributionWebhookToken ? { token: this.#env.distributionWebhookToken } : {})
+      }));
     }
     return adapters;
   }
