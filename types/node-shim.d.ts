@@ -27,9 +27,11 @@ declare module "node:http" {
     setHeader(name: string, value: string): void;
     end(body?: string): void;
   }
-  export function createServer(handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>): {
+  export interface Server {
     listen(port: number, host: string, callback?: () => void): void;
-  };
+    close(callback?: () => void): void;
+  }
+  export function createServer(handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>): Server;
 }
 
 declare const process: {
@@ -37,4 +39,6 @@ declare const process: {
   stdout: { write(message: string): void };
   stderr: { write(message: string): void };
   exitCode?: number;
+  exit(code?: number): never;
+  once(event: "SIGTERM" | "SIGINT", listener: () => void): void;
 };
