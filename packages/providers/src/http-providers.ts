@@ -1,4 +1,10 @@
 import type { ContentPackage, DistributionAdapter, DistributionResult } from "../../distribution/src/distribution.ts";
+import type {
+  DraftArticle,
+  EditorialAssessment,
+  MediaCandidate,
+  MediaProvider
+} from "../../newsroom/src/pipeline.ts";
 
 export interface HttpResponse {
   readonly ok: boolean;
@@ -49,37 +55,143 @@ export class ResendNewsletterAdapter implements DistributionAdapter {
   readonly #fetcher: FetchLike;
   readonly #apiKey: string;
   readonly #from: string;
-  readonly #audienceId: string;
+  readonly #segmentId: string;
+  readonly #replyTo: string | undefined;
 
   public constructor(input: {
     readonly fetcher: FetchLike;
     readonly apiKey: string;
     readonly from: string;
-    readonly audienceId: string;
+    readonly segmentId: string;
+    readonly replyTo?: string;
   }) {
     this.#fetcher = input.fetcher;
     this.#apiKey = required(input.apiKey, "RESEND_API_KEY");
     this.#from = required(input.from, "RESEND_FROM");
-    this.#audienceId = required(input.audienceId, "RESEND_AUDIENCE_ID");
+    this.#segmentId = required(input.segmentId, "RESEND_SEGMENT_ID");
+    this.#replyTo = input.replyTo?.trim() || undefined;
   }
 
   public async deliver(content: ContentPackage, idempotencyKey: string): Promise<DistributionResult> {
-    const result = await postJson(
+    const authorization = { authorization: `Bearer ${this.#apiKey}` };
+    const createResult = await postJson(
       this.#fetcher,
       "https://api.resend.com/broadcasts",
-      { authorization: `Bearer ${this.#apiKey}`, "idempotency-key": idempotencyKey },
+      { ...authorization, "idempotency-key": `${idempotencyKey}:create` },
       {
-        audience_id: this.#audienceId,
+        segment_id: this.#segmentId,
         from: this.#from,
         subject: content.headline,
-        html: `<h1>${escapeHtml(content.headline)}</h1><p>${escapeHtml(content.standfirst)}</p><p><a href="${escapeHtml(content.canonicalUrl)}">Read the full article</a></p>`
+        name: `Publishing Engine: ${content.id}`,
+        html: `<h1>${escapeHtml(content.headline)}</h1><p>${escapeHtml(content.standfirst)}</p><p><a href="${escapeHtml(content.canonicalUrl)}">Read the full article</a></p>`,
+        text: `${content.headline}\n\n${content.standfirst}\n\nRead the full article: ${content.canonicalUrl}`,
+        ...(this.#replyTo ? { reply_to: this.#replyTo } : {})
       }
     ) as { readonly id?: unknown };
-    return {
-      channel: this.channel,
-      status: "delivered",
-      ...(typeof result.id === "string" ? { externalId: result.id } : {})
+
+    if (typeof createResult.id !== "string" || !createResult.id) {
+      throw new Error("Resend did not return a broadcast id.");
+    }
+
+    await postJson(
+      this.#fetcher,
+      `https://api.resend.com/broadcasts/${encodeURIComponent(createResult.id)}/send`,
+      { ...authorization, "idempotency-key": `${idempotencyKey}:send` },
+      {}
+    );
+
+    return { channel: this.channel, status: "delivered", externalId: createResult.id };
+  }
+}
+
+export interface GeneratedImage {
+  readonly sourceUrl: string;
+  readonly altText: string;
+}
+
+export interface ImageGenerator {
+  generate(draft: DraftArticle): Promise<GeneratedImage>;
+}
+
+export class CloudinaryMediaProvider implements MediaProvider {
+  readonly #fetcher: FetchLike;
+  readonly #generator: ImageGenerator;
+  readonly #cloudName: string;
+  readonly #apiKey: string;
+  readonly #apiSecret: string;
+  readonly #assetFolder: string;
+  readonly #now: () => Date;
+
+  public constructor(input: {
+    readonly fetcher: FetchLike;
+    readonly generator: ImageGenerator;
+    readonly cloudName: string;
+    readonly apiKey: string;
+    readonly apiSecret: string;
+    readonly assetFolder: string;
+    readonly now?: () => Date;
+  }) {
+    this.#fetcher = input.fetcher;
+    this.#generator = input.generator;
+    this.#cloudName = required(input.cloudName, "CLOUDINARY_CLOUD_NAME");
+    this.#apiKey = required(input.apiKey, "CLOUDINARY_API_KEY");
+    this.#apiSecret = required(input.apiSecret, "CLOUDINARY_API_SECRET");
+    this.#assetFolder = required(input.assetFolder, "CLOUDINARY_ASSET_FOLDER");
+    this.#now = input.now ?? (() => new Date());
+  }
+
+  public async create(draft: DraftArticle): Promise<MediaCandidate> {
+    const generated = await this.#generator.generate(draft);
+    const sourceUrl = required(generated.sourceUrl, "generated image sourceUrl");
+    const altText = required(generated.altText, "generated image altText");
+    const timestamp = Math.floor(this.#now().getTime() / 1000);
+    const toSign = `asset_folder=${this.#assetFolder}&timestamp=${timestamp}${this.#apiSecret}`;
+    const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(toSign));
+    const signature = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const body = new URLSearchParams({
+      file: sourceUrl,
+      api_key: this.#apiKey,
+      timestamp: String(timestamp),
+      signature,
+      asset_folder: this.#assetFolder
+    }).toString();
+
+    const response = await this.#fetcher(
+      `https://api.cloudinary.com/v1_1/${encodeURIComponent(this.#cloudName)}/image/upload`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body
+      }
+    );
+    if (!response.ok) throw new Error(`Cloudinary upload failed with status ${response.status}`);
+
+    const result = await response.json() as {
+      readonly asset_id?: unknown;
+      readonly secure_url?: unknown;
+      readonly width?: unknown;
+      readonly height?: unknown;
     };
+    if (typeof result.asset_id !== "string" || typeof result.secure_url !== "string") {
+      throw new Error("Cloudinary response is missing asset_id or secure_url.");
+    }
+
+    return {
+      assetId: result.asset_id,
+      url: result.secure_url,
+      altText,
+      ...(typeof result.width === "number" ? { width: result.width } : {}),
+      ...(typeof result.height === "number" ? { height: result.height } : {})
+    };
+  }
+
+  public async assess(asset: MediaCandidate): Promise<EditorialAssessment> {
+    const reasons: string[] = [];
+    if (!asset.url.startsWith("https://")) reasons.push("media URL must use HTTPS");
+    if (!asset.altText.trim()) reasons.push("media alt text is required");
+    if (asset.width !== undefined && asset.width <= 0) reasons.push("media width must be positive");
+    if (asset.height !== undefined && asset.height <= 0) reasons.push("media height must be positive");
+    return { passed: reasons.length === 0, score: reasons.length === 0 ? 1 : 0, reasons };
   }
 }
 
