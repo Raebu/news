@@ -46,6 +46,7 @@ export interface DraftArticle {
 
 export interface MediaCandidate {
   readonly assetId: string;
+  readonly publicId?: string;
   readonly url: string;
   readonly altText: string;
   readonly width?: number;
